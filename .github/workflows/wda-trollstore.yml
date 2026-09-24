@@ -42,6 +42,30 @@ jobs:
           zip -r "$OUT_IPA" Payload
           unzip -l "$OUT_IPA" | head -30
 
+      - name: Embed XCTest runtime (tap-launch needs it in-app)
+        run: |
+          set -eux
+          DEV=$(xcode-select -p)
+          FW=$DEV/Platforms/iPhoneOS.platform/Developer/Library/Frameworks
+          PRIV=$DEV/Platforms/iPhoneOS.platform/Developer/Library/PrivateFrameworks
+          ls "$FW" | head -40
+          ls "$PRIV" | head -40
+          APP=Payload/WebDriverAgentRunner-Runner.app
+          test -d "$FW/XCTest.framework"
+          cp -R "$FW/XCTest.framework" "$APP/Frameworks/"
+          test -d "$FW/XCUITest.framework"
+          cp -R "$FW/XCUITest.framework" "$APP/Frameworks/"
+          if [ -d "$PRIV/XCTestAutomationSupport.framework" ]; then
+            cp -R "$PRIV/XCTestAutomationSupport.framework" "$APP/Frameworks/"
+          elif [ -d "$PRIV/XCTAutomationSupport.framework" ]; then
+            cp -R "$PRIV/XCTAutomationSupport.framework" "$APP/Frameworks/"
+          else
+            echo "AutomationSupport absent (continuing)"
+          fi
+          rm -f "$OUT_IPA"
+          zip -r "$OUT_IPA" Payload
+          unzip -l "$OUT_IPA" | grep -E "Frameworks|XCTest" | head -40
+
       - name: List output (self-diagnosing)
         run: ls -la "${{ github.workspace }}" | head -30; ls -la "$OUT_IPA"
 
