@@ -13,24 +13,31 @@ jobs:
         with:
           xcode-version: "16.4"
 
-      - name: Build unsigned (upstream script)
-        run: sh Scripts/ci/build-real.sh
-        env:
-          DERIVED_DATA_PATH: appium_wda_ios
-          SCHEME: WebDriverAgentRunner
-          DESTINATION: generic/platform=iOS
-          WD: appium_wda_ios/Build/Products/Debug-iphoneos
-          ZIP_PKG_NAME: wda-upstream.zip
+      - name: Build WebDriverAgentRunner Release iphoneos, fully unsigned
+        run: >
+          xcodebuild clean build
+          -project WebDriverAgent.xcodeproj
+          -scheme WebDriverAgentRunner
+          -destination 'generic/platform=iOS'
+          -configuration Release
+          -derivedDataPath appium_wda_ios
+          ARCHS=arm64
+          IPHONEOS_DEPLOYMENT_TARGET=15.0
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
 
-      - name: Fake-sign + package TrollStore IPA
+      - name: Assemble clean Payload (Runner.app + Frameworks only)
         run: |
           set -eux
-          rm -rf wda-up Payload && mkdir wda-up Payload
-          unzip -q wda-upstream.zip -d wda-up
-          cp -R wda-up/WebDriverAgentRunner-Runner.app Payload/
+          SRC=$(find appium_wda_ios/Build/Products/Release-iphoneos -maxdepth 1 -type d -name 'WebDriverAgentRunner-Runner.app' | head -1)
+          test -n "$SRC"
+          rm -rf Payload && mkdir Payload
+          cp -R "$SRC" Payload/
           rm -rf Payload/WebDriverAgentRunner-Runner.app/PlugIns/*.dSYM
+          rm -rf Payload/WebDriverAgentRunner-Runner.app/Frameworks/XC*.framework
+          rm -rf Payload/WebDriverAgentRunner-Runner.app/Frameworks/Testing.framework
+          rm -f Payload/WebDriverAgentRunner-Runner.app/Frameworks/libXCTestSwiftSupport.dylib
           find Payload -name '.ldid*' -delete
-          find Payload -name '*.dSYM' -prune -o -type f -print | head -30
           rm -f "$OUT_IPA"
           zip -r "$OUT_IPA" Payload
           unzip -l "$OUT_IPA" | head -30
