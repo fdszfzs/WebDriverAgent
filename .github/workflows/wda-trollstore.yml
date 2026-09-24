@@ -22,14 +22,15 @@ jobs:
           WD: appium_wda_ios/Build/Products/Debug-iphoneos
           ZIP_PKG_NAME: wda-upstream.zip
 
-      - name: Fake-sign + package TrollStore IPA
+      - name: Clean Payload (Runner.app + Frameworks only, fully unsigned)
         run: |
           set -eux
-          brew install ldid
           rm -rf wda-up Payload && mkdir wda-up Payload
           unzip -q wda-upstream.zip -d wda-up
           cp -R wda-up/WebDriverAgentRunner-Runner.app Payload/
-          find Payload -type f -exec sh -c 'file -b "$1" | grep -q "Mach-O" && ldid -S "$1"' _ {} \;
+          rm -rf Payload/WebDriverAgentRunner-Runner.app/PlugIns/*.dSYM
+          find Payload -name '.ldid*' -delete
+          find Payload -name '*.dSYM' -prune -o -type f -print | head -30
           rm -f "$OUT_IPA"
           zip -r "$OUT_IPA" Payload
           unzip -l "$OUT_IPA" | head -30
