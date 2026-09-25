@@ -5,13 +5,13 @@ env:
   OUT_IPA: ${{ github.workspace }}/WebDriverAgent-TrollStore.ipa
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v5
 
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "16.4"
+          xcode-version: "15.4"
 
       - name: Build WebDriverAgentRunner Release iphoneos, fully unsigned
         run: >
