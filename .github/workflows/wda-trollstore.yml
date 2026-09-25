@@ -27,7 +27,7 @@ jobs:
           CODE_SIGNING_REQUIRED=NO
           CODE_SIGN_IDENTITY=""
 
-      - name: Package unsigned IPA with XCTest and XCUITest
+      - name: Package unsigned IPA with the frameworks xcodebuild embedded
         run: |
           set -eux
           SRC=$(find appium_wda_ios/Build/Products/Release-iphoneos -maxdepth 1 -type d -name "WebDriverAgentRunner-Runner.app" | head -1)
@@ -42,30 +42,49 @@ jobs:
           find "$APP" -name ".ldid*" -delete
           find "$APP" -name "embedded.mobileprovision" -delete
           DEV=$(xcode-select -p)
-          FW="$DEV/Platforms/iPhoneOS.platform/Developer/Library/Frameworks"
           mkdir -p "$APP/Frameworks"
-          for name in XCTest XCUITest; do
-            if [ ! -d "$APP/Frameworks/${name}.framework" ]; then
-              hits=()
-              while IFS= read -r line; do
-                hits+=("$line")
-              done < <(find "$DEV/Platforms/iPhoneOS.platform" -type d -name "${name}.framework")
-              echo "found ${#hits[@]} ${name}.framework under iPhoneOS platform"
-              printf "%s\n" "${hits[@]}"
-              if [ "${#hits[@]}" -ne 1 ]; then
-                echo "refusing to guess ${name}.framework"
-                exit 1
-              fi
-              cp -R "${hits[0]}" "$APP/Frameworks/"
-            fi
+          # Xcode 15.4 links XCUIAutomation, not a separate XCUITest.framework.
+          # Copy XCUITest only when the iPhoneOS platform has exactly one.
+          hits=()
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            hits+=("$line")
+          done < <(find "$DEV/Platforms/iPhoneOS.platform" \( -type d -o -type l \) -name "XCUITest.framework")
+          echo "found ${#hits[@]} XCUITest.framework under iPhoneOS platform"
+          if [ "${#hits[@]}" -gt 0 ]; then
+            printf "%s\n" "${hits[@]}"
+          fi
+          if [ "${#hits[@]}" -gt 1 ]; then
+            echo "refusing to guess XCUITest.framework"
+            exit 1
+          fi
+          if [ "${#hits[@]}" -eq 1 ] && [ ! -e "$APP/Frameworks/XCUITest.framework" ]; then
+            cp -R "${hits[0]}" "$APP/Frameworks/"
+          fi
+          for name in XCTest XCUIAutomation XCTAutomationSupport XCTestCore XCTestSupport XCUnit; do
             test -d "$APP/Frameworks/${name}.framework"
             find "$APP/Frameworks/${name}.framework" -name "_CodeSignature" -type d -prune -exec rm -rf {} +
           done
+          if [ -e "$APP/Frameworks/XCUITest.framework" ]; then
+            find "$APP/Frameworks/XCUITest.framework" -name "_CodeSignature" -type d -prune -exec rm -rf {} +
+          fi
+          BIN="$APP/PlugIns/WebDriverAgentRunner.xctest/WebDriverAgentRunner"
+          otool -L "$BIN"
+          otool -L "$APP/Frameworks/WebDriverAgentLib.framework/WebDriverAgentLib" || true
+          while IFS= read -r fw; do
+            [ -n "$fw" ] || continue
+            if [ ! -d "$APP/Frameworks/$fw" ] && [ ! -d "$APP/PlugIns/WebDriverAgentRunner.xctest/Frameworks/$fw" ]; then
+              echo "missing linked framework $fw"
+              exit 1
+            fi
+          done < <(otool -L "$BIN" | sed -n 's/.*@rpath\/\([^/]*\.framework\)\/.*/\1/p')
           rm -f "$OUT_IPA"
           zip -r -y "$OUT_IPA" Payload
           test -s "$OUT_IPA"
           unzip -l "$OUT_IPA" | grep -q "Frameworks/XCTest.framework/"
-          unzip -l "$OUT_IPA" | grep -q "Frameworks/XCUITest.framework/"
+          unzip -l "$OUT_IPA" | grep -q "Frameworks/XCUIAutomation.framework/"
+          unzip -l "$OUT_IPA" | grep -q "Frameworks/XCTAutomationSupport.framework/"
+          unzip -l "$OUT_IPA" | grep -q "Frameworks/XCTestCore.framework/"
           if unzip -l "$OUT_IPA" | grep -E "dSYM|_CodeSignature|[.]ldid|embedded.mobileprovision"; then
             echo "payload residue"
             exit 1
