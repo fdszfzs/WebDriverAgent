@@ -18,56 +18,55 @@ jobs:
           xcodebuild clean build
           -project WebDriverAgent.xcodeproj
           -scheme WebDriverAgentRunner
-          -destination 'generic/platform=iOS'
+          -destination "generic/platform=iOS"
           -configuration Release
           -derivedDataPath appium_wda_ios
           ARCHS=arm64
           IPHONEOS_DEPLOYMENT_TARGET=15.0
           CODE_SIGNING_ALLOWED=NO
           CODE_SIGNING_REQUIRED=NO
+          CODE_SIGN_IDENTITY=""
 
-      - name: Assemble clean Payload (Runner.app + Frameworks only)
+      - name: Package unsigned IPA with XCTest and XCUITest
         run: |
           set -eux
-          SRC=$(find appium_wda_ios/Build/Products/Release-iphoneos -maxdepth 1 -type d -name 'WebDriverAgentRunner-Runner.app' | head -1)
+          SRC=$(find appium_wda_ios/Build/Products/Release-iphoneos -maxdepth 1 -type d -name "WebDriverAgentRunner-Runner.app" | head -1)
           test -n "$SRC"
-          rm -rf Payload && mkdir Payload
+          test -d "$SRC"
+          rm -rf Payload
+          mkdir Payload
           cp -R "$SRC" Payload/
-          rm -rf Payload/WebDriverAgentRunner-Runner.app/PlugIns/*.dSYM
-          rm -rf Payload/WebDriverAgentRunner-Runner.app/Frameworks/XC*.framework
-          rm -rf Payload/WebDriverAgentRunner-Runner.app/Frameworks/Testing.framework
-          rm -f Payload/WebDriverAgentRunner-Runner.app/Frameworks/libXCTestSwiftSupport.dylib
-          find Payload -name '.ldid*' -delete
+          APP=Payload/WebDriverAgentRunner-Runner.app
+          find "$APP" -name "*.dSYM" -prune -exec rm -rf {} +
+          find "$APP" -name "_CodeSignature" -type d -prune -exec rm -rf {} +
+          find "$APP" -name ".ldid*" -delete
+          find "$APP" -name "embedded.mobileprovision" -delete
+          DEV=$(xcode-select -p)
+          FW="$DEV/Platforms/iPhoneOS.platform/Developer/Library/Frameworks"
+          mkdir -p "$APP/Frameworks"
+          for name in XCTest XCUITest; do
+            if [ ! -d "$APP/Frameworks/${name}.framework" ]; then
+              test -d "$FW/${name}.framework"
+              cp -R "$FW/${name}.framework" "$APP/Frameworks/"
+            fi
+            test -d "$APP/Frameworks/${name}.framework"
+            find "$APP/Frameworks/${name}.framework" -name "_CodeSignature" -type d -prune -exec rm -rf {} +
+          done
           rm -f "$OUT_IPA"
-          zip -r "$OUT_IPA" Payload
-          unzip -l "$OUT_IPA" | head -30
+          zip -r -y "$OUT_IPA" Payload
+          test -s "$OUT_IPA"
+          unzip -l "$OUT_IPA" | grep -q "Frameworks/XCTest.framework/"
+          unzip -l "$OUT_IPA" | grep -q "Frameworks/XCUITest.framework/"
+          if unzip -l "$OUT_IPA" | grep -E "dSYM|_CodeSignature|[.]ldid|embedded.mobileprovision"; then
+            echo "payload residue"
+            exit 1
+          fi
 
-      - name: Embed XCTest runtime (tap-launch needs it in-app)
+      - name: List IPA contents
         run: |
           set -eux
-          DEV=$(xcode-select -p)
-          FW=$DEV/Platforms/iPhoneOS.platform/Developer/Library/Frameworks
-          PRIV=$DEV/Platforms/iPhoneOS.platform/Developer/Library/PrivateFrameworks
-          ls "$FW" | head -40
-          ls "$PRIV" | head -40
-          APP=Payload/WebDriverAgentRunner-Runner.app
-          test -d "$FW/XCTest.framework"
-          cp -R "$FW/XCTest.framework" "$APP/Frameworks/"
-          test -d "$FW/XCUITest.framework"
-          cp -R "$FW/XCUITest.framework" "$APP/Frameworks/"
-          if [ -d "$PRIV/XCTestAutomationSupport.framework" ]; then
-            cp -R "$PRIV/XCTestAutomationSupport.framework" "$APP/Frameworks/"
-          elif [ -d "$PRIV/XCTAutomationSupport.framework" ]; then
-            cp -R "$PRIV/XCTAutomationSupport.framework" "$APP/Frameworks/"
-          else
-            echo "AutomationSupport absent (continuing)"
-          fi
-          rm -f "$OUT_IPA"
-          zip -r "$OUT_IPA" Payload
-          unzip -l "$OUT_IPA" | grep -E "Frameworks|XCTest" | head -40
-
-      - name: List output (self-diagnosing)
-        run: ls -la "${{ github.workspace }}" | head -30; ls -la "$OUT_IPA"
+          ls -la "$OUT_IPA"
+          unzip -l "$OUT_IPA"
 
       - uses: actions/upload-artifact@v5
         with:
