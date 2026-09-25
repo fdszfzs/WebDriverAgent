@@ -46,8 +46,17 @@ jobs:
           mkdir -p "$APP/Frameworks"
           for name in XCTest XCUITest; do
             if [ ! -d "$APP/Frameworks/${name}.framework" ]; then
-              test -d "$FW/${name}.framework"
-              cp -R "$FW/${name}.framework" "$APP/Frameworks/"
+              hits=()
+              while IFS= read -r line; do
+                hits+=("$line")
+              done < <(find "$DEV/Platforms/iPhoneOS.platform" -type d -name "${name}.framework")
+              echo "found ${#hits[@]} ${name}.framework under iPhoneOS platform"
+              printf "%s\n" "${hits[@]}"
+              if [ "${#hits[@]}" -ne 1 ]; then
+                echo "refusing to guess ${name}.framework"
+                exit 1
+              fi
+              cp -R "${hits[0]}" "$APP/Frameworks/"
             fi
             test -d "$APP/Frameworks/${name}.framework"
             find "$APP/Frameworks/${name}.framework" -name "_CodeSignature" -type d -prune -exec rm -rf {} +
